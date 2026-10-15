@@ -1,0 +1,325 @@
+const SITES = {
+  enlin: {
+    label: "ENLIN",
+    baseUrl: "https://truckmonitoring-bffa5-default-rtdb.asia-southeast1.firebasedatabase.app",
+    dailyPath: "daily_movements",
+  },
+  bacao: {
+    label: "BACAO",
+    // Add BACAO Firebase Realtime Database URL here when available.
+    // Example: https://your-bacao-project-default-rtdb.asia-southeast1.firebasedatabase.app
+    baseUrl: "",
+    dailyPath: "daily_movements",
+  },
+};
+
+const $ = (id) => document.getElementById(id);
+let currentView = "dashboardView";
+let dashboardTimer = null;
+let weatherTimer = null;
+
+const WEATHER_SITE = {
+  // Shared operating-area weather for ENLIN + BACAO.
+  latitude: 14.3522,
+  longitude: 120.8821,
+};
+
+function firebaseUrl(site, path = "") {
+  return `${site.baseUrl.replace(/\/$/, "")}/${path}.json`;
+}
+
+async function requestSite(site, path) {
+  if (!site.baseUrl) return null;
+  const response = await fetch(firebaseUrl(site, path), { cache: "no-store" });
+  if (!response.ok) throw new Error(`${site.label} Firebase ${response.status}`);
+  return response.json();
+}
+
+function localDateKey(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function shiftDateKey(dateKey, days) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + days);
+  return localDateKey(date);
+}
+
+function dateKeyFromIso(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : localDateKey(date);
+}
+
+function prettyDate(dateKey) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-PH", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
+function timeOnly(date = new Date()) {
+  return date.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function showToast(message, type = "success") {
+  const toast = $("toast");
+  toast.textContent = message;
+  toast.className = `toast show${type === "error" ? " error" : ""}`;
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => { toast.className = "toast"; }, 2600);
+}
+
+function recordsFromObject(data) {
+  return data ? Object.entries(data).map(([id, record]) => ({ id, ...record })) : [];
+}
+
+function dedupeRecords(records) {
+  const map = new Map();
+  records.forEach((record) => map.set(record.id, record));
+  return [...map.values()];
+}
+
+function getIntervalMinutes(record) {
+  const start = Number(record.timeInEpoch) || new Date(record.timeIn || "").getTime();
+  const end = Number(record.timeOutEpoch) || new Date(record.timeOut || "").getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  return Math.floor((end - start) / 60000);
+}
+
+async function getDailyBucket(site, dateKey) {
+  if (!site.baseUrl) return [];
+  return recordsFromObject(await requestSite(site, `${site.dailyPath}/${dateKey}`));
+}
+
+const dashboardTotals = {
+  enlin: { delivery: 0, pullout: 0 },
+  bacao: { delivery: 0, pullout: 0 },
+};
+
+function updateCombinedDashboard() {
+  const delivery = dashboardTotals.enlin.delivery + dashboardTotals.bacao.delivery;
+  const pullout = dashboardTotals.enlin.pullout + dashboardTotals.bacao.pullout;
+  $("combinedDeliveryCount").textContent = delivery;
+  $("combinedPulloutCount").textContent = pullout;
+  $("combinedTotalTransactions").textContent = delivery + pullout;
+}
+
+function setDashboardValues(prefix, delivery, pullout) {
+  $(`${prefix}DeliveryCount`).textContent = delivery;
+  $(`${prefix}PulloutCount`).textContent = pullout;
+  $(`${prefix}TotalTransactions`).textContent = delivery + pullout;
+  dashboardTotals[prefix] = { delivery, pullout };
+  updateCombinedDashboard();
+}
+
+async function loadSiteDashboard(prefix, site, today, yesterday) {
+  const status = $(`${prefix}Status`);
+  if (!site.baseUrl) {
+    setDashboardValues(prefix, 0, 0);
+    status.textContent = "Source pending";
+    status.className = "site-status pending";
+    return;
+  }
+
+  try {
+    const [todayRecords, yesterdayRecords] = await Promise.all([
+      getDailyBucket(site, today),
+      getDailyBucket(site, yesterday),
+    ]);
+    const combined = dedupeRecords([...todayRecords, ...yesterdayRecords]);
+    const delivery = todayRecords.filter((r) => r.inBare === false).length;
+    const pullout = combined.filter((r) => r.outBare === false && dateKeyFromIso(r.timeOut) === today).length;
+    setDashboardValues(prefix, delivery, pullout);
+    status.textContent = "Connected";
+    status.className = "site-status ready";
+  } catch (error) {
+    console.error(error);
+    setDashboardValues(prefix, 0, 0);
+    status.textContent = "Connection error";
+    status.className = "site-status error";
+  }
+}
+
+async function loadDashboard({ silent = false } = {}) {
+  const today = localDateKey();
+  const yesterday = shiftDateKey(today, -1);
+  const refreshBtn = $("refreshBtn");
+  if (!silent) refreshBtn.classList.add("loading");
+  $("todayLabel").textContent = prettyDate(today);
+  const asOf = $("asOfText");
+  const asOfTime = asOf?.querySelector(".as-of-time");
+  if (asOfTime) asOfTime.textContent = timeOnly();
+
+  try {
+    await Promise.all([
+      loadSiteDashboard("enlin", SITES.enlin, today, yesterday),
+      loadSiteDashboard("bacao", SITES.bacao, today, yesterday),
+    ]);
+  } finally {
+    refreshBtn.classList.remove("loading");
+  }
+}
+
+function resetReport(prefix) {
+  $(`${prefix}Under20Count`).textContent = "—";
+  $(`${prefix}Range21to40Count`).textContent = "—";
+  $(`${prefix}Range41to60Count`).textContent = "—";
+}
+
+function setReport(prefix, records) {
+  const completed = records.filter((r) => r.status === "CLOSED" && r.timeOut);
+  let under20 = 0, range21to40 = 0, range41to60 = 0, other = 0;
+  completed.forEach((record) => {
+    const minutes = getIntervalMinutes(record);
+    if (minutes === null) other++;
+    else if (minutes < 20) under20++;
+    else if (minutes >= 21 && minutes <= 40) range21to40++;
+    else if (minutes >= 41 && minutes <= 60) range41to60++;
+    else other++;
+  });
+  $(`${prefix}Under20Count`).textContent = under20;
+  $(`${prefix}Range21to40Count`).textContent = range21to40;
+  $(`${prefix}Range41to60Count`).textContent = range41to60;
+}
+
+async function loadSiteReport(prefix, site, dateKey) {
+  resetReport(prefix);
+  const status = prefix === "bacao" ? $("bacaoReportStatus") : null;
+  if (!site.baseUrl) {
+    setReport(prefix, []);
+    if (status) { status.textContent = "Source pending"; status.className = "site-status pending"; }
+    return;
+  }
+  try {
+    const records = await getDailyBucket(site, dateKey);
+    setReport(prefix, records);
+    if (status) { status.textContent = "Connected"; status.className = "site-status ready"; }
+  } catch (error) {
+    console.error(error);
+    setReport(prefix, []);
+    if (status) { status.textContent = "Connection error"; status.className = "site-status error"; }
+  }
+}
+
+async function loadReport() {
+  const selectedDate = $("reportDate").value || localDateKey();
+  $("reportDate").value = selectedDate;
+  $("reportDateText").textContent = prettyDate(selectedDate);
+  $("refreshBtn").classList.add("loading");
+  try {
+    await Promise.all([
+      loadSiteReport("enlin", SITES.enlin, selectedDate),
+      loadSiteReport("bacao", SITES.bacao, selectedDate),
+    ]);
+  } finally {
+    $("refreshBtn").classList.remove("loading");
+  }
+}
+
+function weatherCodeInfo(code) {
+  const map = {
+    0: ["☀️", "Clear sky"], 1: ["🌤️", "Mainly clear"], 2: ["⛅", "Partly cloudy"], 3: ["☁️", "Overcast"],
+    45: ["🌫️", "Fog"], 48: ["🌫️", "Rime fog"], 51: ["🌦️", "Light drizzle"], 53: ["🌦️", "Drizzle"], 55: ["🌧️", "Heavy drizzle"],
+    61: ["🌦️", "Light rain"], 63: ["🌧️", "Rain"], 65: ["🌧️", "Heavy rain"], 80: ["🌦️", "Rain showers"], 81: ["🌧️", "Rain showers"], 82: ["⛈️", "Heavy showers"],
+    95: ["⛈️", "Thunderstorm"], 96: ["⛈️", "Thunderstorm with hail"], 99: ["⛈️", "Severe thunderstorm"],
+  };
+  return map[code] || ["🌤️", "Current conditions"];
+}
+
+async function fetchWeather(prefix, cfg) {
+  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  url.searchParams.set("latitude", cfg.latitude);
+  url.searchParams.set("longitude", cfg.longitude);
+  url.searchParams.set("current", "temperature_2m,apparent_temperature,weather_code,wind_speed_10m");
+  url.searchParams.set("hourly", "precipitation_probability");
+  url.searchParams.set("forecast_days", "1");
+  url.searchParams.set("timezone", "Asia/Manila");
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Weather ${response.status}`);
+  const data = await response.json();
+  const current = data.current || {};
+  const [icon, condition] = weatherCodeInfo(Number(current.weather_code));
+  const nowIso = current.time;
+  let rain = "—";
+  if (nowIso && data.hourly?.time?.length) {
+    const idx = data.hourly.time.findIndex((t) => t === nowIso);
+    if (idx >= 0) rain = `${data.hourly.precipitation_probability?.[idx] ?? 0}%`;
+    else {
+      const hour = nowIso.slice(0, 13);
+      const hidx = data.hourly.time.findIndex((t) => t.slice(0,13) === hour);
+      if (hidx >= 0) rain = `${data.hourly.precipitation_probability?.[hidx] ?? 0}%`;
+    }
+  }
+  $(`${prefix}WeatherIcon`).textContent = icon;
+  $(`${prefix}Temp`).textContent = `${Math.round(current.temperature_2m ?? 0)}°`;
+  $(`${prefix}Condition`).textContent = condition;
+  $(`${prefix}Feels`).textContent = `${Math.round(current.apparent_temperature ?? current.temperature_2m ?? 0)}°`;
+  $(`${prefix}Rain`).textContent = rain;
+  $(`${prefix}Wind`).textContent = `${Math.round(current.wind_speed_10m ?? 0)} km/h`;
+  $(`${prefix}WeatherCard`).classList.remove("weather-error");
+}
+
+async function loadWeather({ silent = false } = {}) {
+  const label = $("weatherUpdated");
+  if (!silent && label) label.textContent = "Updating…";
+  try {
+    await fetchWeather("ops", WEATHER_SITE);
+  } catch (error) {
+    console.error(error);
+    $("opsCondition").textContent = "Weather temporarily unavailable";
+    $("opsWeatherCard").classList.add("weather-error");
+  }
+  if (label) label.textContent = `Updated ${new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+function startWeatherAutoRefresh() {
+  clearInterval(weatherTimer);
+  weatherTimer = setInterval(() => {
+    if (!document.hidden) loadWeather({ silent: true });
+  }, 10 * 60 * 1000);
+}
+
+function startDashboardAutoRefresh() {
+  clearInterval(dashboardTimer);
+  dashboardTimer = setInterval(() => {
+    if (currentView === "dashboardView" && !document.hidden) loadDashboard({ silent: true });
+  }, 60000);
+}
+
+document.querySelectorAll(".nav-btn").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
+    button.classList.add("active");
+    document.querySelectorAll(".view").forEach((v) => v.classList.remove("active-view"));
+    currentView = button.dataset.view;
+    $(currentView).classList.add("active-view");
+    if (currentView === "dashboardView") loadDashboard();
+    else loadReport();
+  });
+});
+
+$("refreshBtn").addEventListener("click", () => {
+  if (currentView === "dashboardView") {
+    loadDashboard();
+    loadWeather();
+  } else {
+    loadReport();
+  }
+});
+$("reportDate").addEventListener("change", loadReport);
+$("todayBtn").addEventListener("click", () => { $("reportDate").value = localDateKey(); loadReport(); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && currentView === "dashboardView") {
+    loadDashboard({ silent: true });
+    loadWeather({ silent: true });
+  }
+});
+
+$("reportDate").value = localDateKey();
+loadDashboard();
+loadWeather();
+startDashboardAutoRefresh();
+startWeatherAutoRefresh();
