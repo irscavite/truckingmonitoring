@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#102748" />
+  <title>ENLIN Movement | Truck Monitoring</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">E61</div>
+        <div>
+          <p class="eyebrow">EASTERN1961 • ENLIN OPERATIONS</p>
+          <h1>Truck Movement Dashboard</h1>
+        </div>
+      </div>
+      <button id="refreshBtn" class="refresh-btn" type="button" title="Refresh dashboard data" aria-label="Refresh dashboard data">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-5L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14 5l2-2"/><path d="M20 21v-5h-5"/></svg>
+        <span>Refresh</span>
+      </button>
+    </header>
+
+    <section class="live-info-bar" aria-label="Live weather and Philippine time">
+      <div class="live-info-item weather-info" title="Weather location may be changed in app.js">
+        <span class="live-info-icon" id="weatherIcon" aria-hidden="true">☁</span>
+        <div class="live-info-copy"><span class="live-info-label">CURRENT WEATHER · <span id="weatherLocation">BATANGAS CITY</span></span>
+          <strong id="weatherValue">Loading weather…</strong><small id="weatherUpdated">Live weather service</small></div>
+      </div>
+      <div class="live-info-item clock-info">
+        <span class="live-info-icon" aria-hidden="true">◷</span>
+        <div class="live-info-copy"><span class="live-info-label">LIVE PHILIPPINE TIME (PHT)</span>
+          <strong id="runningClock" role="timer">--:--:--</strong><small id="runningDate">—</small></div>
+      </div>
+    </section>
+
+    <main>
+      <section class="dashboard-panel" aria-labelledby="enlinTitle">
+        <div class="panel-heading">
+          <div>
+            <span class="location-tag">ENLIN</span>
+            <h2 id="enlinTitle">ENLIN Movement</h2>
+            <p class="subtitle">Daily truck entry, exit and yard occupancy</p>
+          </div>
+          <div class="heading-right">
+            <span id="enlinStatus" class="site-status pending" role="status">Connecting…</span>
+            <p class="as-of" id="headerAsOf">As of —</p>
+          </div>
+        </div>
+
+        <div class="metrics-grid">
+          <article class="metric-card truck-in">
+            <span class="metric-icon" aria-hidden="true">↘</span>
+            <div class="metric-body"><p class="metric-label">Truck IN</p><strong id="truckInCount" class="metric-value">—</strong><p class="metric-help">Trucks entered today</p></div>
+          </article>
+          <article class="metric-card truck-out">
+            <span class="metric-icon" aria-hidden="true">↗</span>
+            <div class="metric-body"><p class="metric-label">Truck OUT</p><strong id="truckOutCount" class="metric-value">—</strong><p class="metric-help">Trucks exited today</p></div>
+          </article>
+          <article class="metric-card truck-inside">
+            <span class="metric-icon" aria-hidden="true">▣</span>
+            <div class="metric-body"><p class="metric-label">Truck Remaining Inside</p><strong id="truckInsideCount" class="metric-value">—</strong><p class="metric-help">All active trucks, including previous dates</p></div>
+          </article>
+          <article class="metric-card transaction-trucks">
+            <span class="metric-icon" aria-hidden="true">✓</span>
+            <div class="metric-body"><p class="metric-label">Trucks With Transactions</p><strong id="transactionTruckCount" class="metric-value">—</strong><p class="metric-help">Today's Truck IN minus Pass Through • ENLIN actual transactions</p></div>
+          </article>
+          <article class="metric-card enlin-utilization" aria-label="Enlin yard utilization from YardActivity6">
+            <span class="metric-icon" aria-hidden="true">%</span>
+            <div class="metric-body">
+              <p class="metric-label">Enlin Utilization</p>
+              <strong id="enlinUtilizationPct" class="metric-value">—</strong>
+              <p class="metric-help"><span id="enlinUtilizationCount">Loading occupied slots…</span> / 1,100 capacity</p>
+              <div class="utilization-track"><div id="enlinUtilizationBar" class="utilization-fill"></div></div>
+              <p id="enlinUtilizationAsOf" class="metric-help" aria-live="polite">As of —</p>
+            </div>
+          </article>
+          <article class="metric-card pass-through">
+            <span class="metric-icon" aria-hidden="true">↔</span>
+            <div class="metric-body"><p class="metric-label">Pass Through</p><strong id="passThroughCount" class="metric-value">—</strong><p class="metric-help">Separate pass-through count</p></div>
+          </article>
+        </div>
+
+        <section class="chart-card" aria-labelledby="chartHeading">
+          <div class="chart-header">
+            <div>
+              <p class="section-kicker">DAILY • HOURLY DISTRIBUTION</p>
+              <h3 id="chartHeading">Truck Movement by Hour</h3>
+              <p class="chart-date" id="chartDate">—</p>
+            </div>
+            <span class="chart-tag">24 HOURS</span>
+          </div>
+          <div class="chart-legend" aria-label="Graph series">
+            <span><i class="legend-marker in-color"></i> Truck IN</span>
+            <span><i class="legend-marker out-color"></i> Truck OUT</span>
+            <span><i class="legend-marker passthrough-color"></i> Pass Through</span>
+            <span><i class="legend-marker inside-color"></i> Truck Inside</span>
+          </div>
+          <div class="chart-scroll" id="chartScroll" tabindex="0" aria-label="Hourly grouped bar graph, scroll sideways to view all hours">
+            <svg id="hourlyChart" role="img" aria-label="Four hourly bars for Truck IN, Truck OUT, Pass Through and Truck Inside" viewBox="0 0 1320 312" preserveAspectRatio="xMinYMin meet"></svg>
+          </div>
+          <p class="chart-explainer" id="chartNote">IN / OUT / Pass Through use the left scale. Inside uses the right scale (end-of-hour yard occupancy). Scroll horizontally to see all 24 hours.</p>
+        </section>
+
+        <section class="dwell-card" aria-label="Average truck dwell time">
+          <div class="dwell-icon" aria-hidden="true">◷</div>
+          <div class="dwell-content">
+            <p class="dwell-eyebrow">AVERAGE DWELL TIME</p>
+            <strong id="averageDwellTime">—</strong>
+            <p class="dwell-note" id="dwellSample">Based on trucks that exited today</p>
+          </div>
+          <div class="dwell-asof" id="dwellAsOf">As of —</div>
+        </section>
+
+        <section class="turnaround-card" aria-labelledby="turnaroundHeading">
+          <div class="turnaround-heading">
+            <div>
+              <p class="section-kicker">TODAY • COMPLETED TRUCK OUT</p>
+              <h3 id="turnaroundHeading">Truck Turnaround Time</h3>
+              <p class="turnaround-description">Time from Truck IN to Truck OUT, grouped by duration.</p>
+            </div>
+            <div class="turnaround-total">
+              <strong id="turnaroundTotal">—</strong>
+              <span>Completed trucks</span>
+            </div>
+          </div>
+          <div class="turnaround-distribution" aria-label="Number of trucks in each turnaround-time range">
+            <div class="turnaround-row">
+              <span class="turnaround-label" title="0 to 10 minutes, inclusive">0–10 mins</span>
+              <div class="turnaround-track"><div id="turnaroundBar0" class="turnaround-fill turnaround-band-0" style="width:0%"></div></div>
+              <strong id="turnaroundCount0" class="turnaround-count">—</strong>
+              <span id="turnaroundPct0" class="turnaround-pct">—</span>
+            </div>
+            <div class="turnaround-row">
+              <span class="turnaround-label" title="More than 10 minutes, up to 20 minutes">11–20 mins</span>
+              <div class="turnaround-track"><div id="turnaroundBar1" class="turnaround-fill turnaround-band-1" style="width:0%"></div></div>
+              <strong id="turnaroundCount1" class="turnaround-count">—</strong>
+              <span id="turnaroundPct1" class="turnaround-pct">—</span>
+            </div>
+            <div class="turnaround-row">
+              <span class="turnaround-label" title="More than 20 minutes, up to 40 minutes">21–40 mins</span>
+              <div class="turnaround-track"><div id="turnaroundBar2" class="turnaround-fill turnaround-band-2" style="width:0%"></div></div>
+              <strong id="turnaroundCount2" class="turnaround-count">—</strong>
+              <span id="turnaroundPct2" class="turnaround-pct">—</span>
+            </div>
+            <button type="button" id="turnaroundDetail3" class="turnaround-row turnaround-clickable" title="View trucking and plate numbers for this range">
+              <span class="turnaround-label" title="More than 40 minutes, up to 60 minutes">41–60 mins</span>
+              <div class="turnaround-track"><div id="turnaroundBar3" class="turnaround-fill turnaround-band-3" style="width:0%"></div></div>
+              <strong id="turnaroundCount3" class="turnaround-count">—</strong>
+              <span id="turnaroundPct3" class="turnaround-pct">—</span>
+            </button>
+            <button type="button" id="turnaroundDetail4" class="turnaround-row turnaround-clickable" title="View trucking and plate numbers for this range">
+              <span class="turnaround-label" title="More than 60 minutes">Over 60 mins</span>
+              <div class="turnaround-track"><div id="turnaroundBar4" class="turnaround-fill turnaround-band-4" style="width:0%"></div></div>
+              <strong id="turnaroundCount4" class="turnaround-count">—</strong>
+              <span id="turnaroundPct4" class="turnaround-pct">—</span>
+            </button>
+          </div>
+          <div class="turnaround-footer">
+            <span id="turnaroundNote">Counting completed trucks with valid IN and OUT timestamps today. Tap 41–60 or Over 60 for details.</span>
+            <span id="turnaroundAsOf">As of —</span>
+          </div>
+        </section>
+        <p class="source-footnote" id="sourceNote">Connecting to ENLIN Firebase…</p>
+      </section>
+    </main>
+  </div>
+  <div id="longStayModal" class="long-stay-overlay" role="presentation" hidden>
+    <section class="long-stay-dialog" role="dialog" aria-modal="true" aria-labelledby="longStayTitle" aria-describedby="longStaySubtitle">
+      <div class="long-stay-header">
+        <div><h2 id="longStayTitle">Long-stay trucks</h2><p id="longStaySubtitle"></p></div>
+        <button id="longStayClose" type="button" aria-label="Close truck list">✕</button>
+      </div>
+      <div class="long-stay-table-wrap"><table class="long-stay-table">
+        <thead><tr><th>Trucking</th><th>Plate Number</th><th>Time IN</th><th>Time OUT</th><th>Dwell Time</th><th>Pass Through?</th></tr></thead>
+        <tbody id="longStayTableBody"></tbody>
+      </table></div>
+    </section>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
