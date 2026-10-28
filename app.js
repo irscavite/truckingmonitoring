@@ -651,7 +651,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) { ti
 // each inventory record whose normalized Location is CEZ-2 or CEZ-2-* counts
 // as one occupied empty-container slot. Capacity = 1,100.
 const YARD_UTILIZATION = {
-  firebase: "https://yardactivity6-default-rtdb.asia-southeast1.firebasedatabase.app",
+  firebase: "https://yardactivity7-14f6e-default-rtdb.asia-southeast1.firebasedatabase.app",
   capacity: 1100,
   refreshMs: 2 * 60 * 1000,
   paths: [
@@ -704,7 +704,7 @@ async function refreshEnlinUtilization() {
     $("enlinUtilizationPct").textContent = `${percent.toFixed(2)}%`;
     $("enlinUtilizationCount").textContent = `${occupied.toLocaleString("en-PH")} occupied`;
     $("enlinUtilizationBar").style.width = `${Math.min(100, percent)}%`;
-    status.textContent = `As of ${phDateTime.format(Date.now())} • YardActivity6`;
+    status.textContent = `As of ${phDateTime.format(Date.now())} • YardActivity7`;
   } catch (err) {
     console.warn("Separate Enlin utilization fetch failed:", err);
     status.textContent = "Yard utilization unavailable • retrying";
